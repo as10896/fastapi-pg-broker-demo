@@ -1,0 +1,94 @@
+---
+title: fastapi-pg-broker-demo schema (sql/schema.sql)
+---
+erDiagram
+    %% Solid lines are foreign keys (ON DELETE CASCADE).
+    %% Dashed lines are logical links stored as plain columns, without a foreign key.
+
+    %% ---- Message broker ----
+    messages {
+        bigint      id           PK
+        text        queue
+        jsonb       payload
+        text        status       "pending | processing | done | dead"
+        integer     priority
+        integer     attempts
+        integer     max_attempts
+        timestamptz available_at "delay and retry backoff"
+        text        locked_by    "lease holder: consumers.id"
+        timestamptz locked_at    "lease last renewed"
+        text        last_error
+        timestamptz created_at
+        timestamptz finished_at
+    }
+
+    %% ---- Worker registry and remote control ----
+    workers {
+        text        id           PK "hostname-random suffix"
+        text        hostname
+        integer     pid
+        timestamptz started_at
+        timestamptz heartbeat_at
+    }
+
+    consumers {
+        text        id                 PK "worker id-cN"
+        text        worker_id          FK
+        text        queue
+        text        state              "starting | idle | processing | stopping"
+        bigint      current_message_id "messages.id"
+        integer     work_ms
+        integer     processed
+        integer     failed
+        timestamptz started_at
+        timestamptz heartbeat_at
+    }
+
+    worker_commands {
+        bigint      id         PK
+        text        worker_id  FK
+        text        command    "start | stop | kill"
+        jsonb       args
+        timestamptz created_at
+    }
+
+    %% ---- Locking experiment ----
+    experiments {
+        bigint      id         PK
+        integer     jobs
+        integer     workers
+        integer     job_ms
+        timestamptz created_at
+    }
+
+    experiment_runs {
+        bigint      id            PK
+        bigint      experiment_id FK
+        text        mode          "no_lock | for_update | skip_locked"
+        text        status        "queued | running | finished | failed | interrupted"
+        timestamptz started_at
+        timestamptz finished_at
+        text        error
+    }
+
+    experiment_jobs {
+        bigint  run_id PK, FK
+        integer id     PK
+        text    status "pending | done"
+    }
+
+    experiment_executions {
+        bigint      run_id      FK
+        integer     job_id      "experiment_jobs.id"
+        integer     worker
+        timestamptz executed_at
+    }
+
+    workers         ||--o{ consumers             : runs
+    workers         ||--o{ worker_commands       : receives
+    consumers       |o..o{ messages              : "holds lease (locked_by)"
+
+    experiments     ||--o{ experiment_runs       : "runs once per mode"
+    experiment_runs ||--o{ experiment_jobs       : contains
+    experiment_runs ||--o{ experiment_executions : records
+    experiment_jobs ||..o{ experiment_executions : "executed as (job_id)"

@@ -187,18 +187,3 @@ CREATE TABLE IF NOT EXISTS experiment_executions (
 
 CREATE INDEX IF NOT EXISTS experiment_executions_run_idx
     ON experiment_executions (run_id);
-
--- Databases created before the experiment's "workers" were renamed "consumers"
--- still have the old column names: rename them in place, keeping the data.
-DO $$
-BEGIN
-    IF EXISTS (SELECT 1 FROM information_schema.columns
-               WHERE table_name = 'experiments' AND column_name = 'workers') THEN
-        ALTER TABLE experiments RENAME COLUMN workers TO consumers;
-    END IF;
-    IF EXISTS (SELECT 1 FROM information_schema.columns
-               WHERE table_name = 'experiment_executions' AND column_name = 'worker') THEN
-        ALTER TABLE experiment_executions RENAME COLUMN worker TO consumer;
-    END IF;
-END
-$$;

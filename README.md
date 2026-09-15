@@ -278,9 +278,6 @@ process, these consumers share one event loop, closer to Celery's `gevent` or `e
 They suit I/O-bound handlers; a CPU-bound handler would block the other consumers of its worker,
 so scale that kind of work with more workers instead.
 
-The locking experiment also talks about consumers: there, they are asyncio tasks inside the
-web app, and no worker is involved.
-
 ## Project layout
 
 ```

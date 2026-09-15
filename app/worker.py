@@ -20,7 +20,8 @@ from typing import Any
 
 import psycopg
 
-from app import broker, db
+from app import db
+from app.broker import control, registry
 from app.config import settings
 from app.consumer import Consumer
 from app.notifier import Notifier
@@ -65,7 +66,7 @@ class Worker:
                 await task
         await self.stop_all()
         with contextlib.suppress(psycopg.Error):
-            await broker.remove_worker(self.pool, self.id)
+            await registry.remove_worker(self.pool, self.id)
 
     # -- consumers ----------------------------------------------------------
 
@@ -124,7 +125,7 @@ class Worker:
         while True:
             seen = self.notifier.version
             try:
-                for command in await broker.take_commands(self.pool, self.id):
+                for command in await control.take_commands(self.pool, self.id):
                     await self._execute(command["command"], command["args"])
             except psycopg.Error:
                 log.exception("receiving commands failed")
@@ -160,7 +161,7 @@ class Worker:
 
     async def _beat(self) -> None:
         consumers = list(self.consumers.values())
-        await broker.heartbeat(
+        await registry.heartbeat(
             self.pool,
             worker={
                 "id": self.id,
@@ -190,7 +191,7 @@ class Worker:
         )
         if self._finished:
             finished, self._finished = list(self._finished), set()
-            await broker.remove_consumers(self.pool, finished)
+            await registry.remove_consumers(self.pool, finished)
 
 
 async def main(queue: str, concurrency: int, work_ms: int) -> None:

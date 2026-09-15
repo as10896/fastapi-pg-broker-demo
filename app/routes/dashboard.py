@@ -3,7 +3,7 @@ from typing import Any
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 
-from app import broker
+from app.broker import messages, monitoring, registry
 from app.db import SCHEMA_PATH, Pool
 from app.web import WORKER_LOST_AFTER_S, PoolDep, Snippet, redirect, render
 
@@ -12,7 +12,7 @@ router = APIRouter()
 SNIPPETS = [
     Snippet(
         "Queue statistics",
-        broker.STATS_SQL,
+        monitoring.STATS_SQL,
         "One pass over the table, grouped by queue. Fine for a demo; a busy production "
         "system would archive done messages or maintain counters instead.",
     ),
@@ -31,12 +31,12 @@ def _live(rows: list[dict[str, Any]]) -> int:
 
 
 async def _stats(pool: Pool) -> dict[str, Any]:
-    queues = await broker.queue_stats(pool)
+    queues = await monitoring.queue_stats(pool)
     return {
         "queues": queues,
         "totals": {key: sum(q[key] for q in queues) for key in COUNTERS},
-        "live_workers": _live(await broker.list_workers(pool)),
-        "live_consumers": _live(await broker.list_consumers(pool)),
+        "live_workers": _live(await registry.list_workers(pool)),
+        "live_consumers": _live(await registry.list_consumers(pool)),
     }
 
 
@@ -52,5 +52,5 @@ async def stats_partial(request: Request, pool: PoolDep):
 
 @router.post("/reset")
 async def reset_messages(pool: PoolDep):
-    await broker.reset(pool)
+    await messages.reset(pool)
     return redirect("/", "All messages deleted.")

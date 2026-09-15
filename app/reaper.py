@@ -3,7 +3,7 @@ import logging
 
 import psycopg
 
-from app import broker
+from app.broker import messages, registry
 from app.config import settings
 from app.db import Pool
 
@@ -24,10 +24,10 @@ async def run_reaper(pool: Pool) -> None:
     """
     while True:
         try:
-            reaped = await broker.reap_expired_leases(pool, settings.visibility_timeout_s)
+            reaped = await messages.reap_expired_leases(pool, settings.visibility_timeout_s)
             if reaped:
                 log.warning("recovered %d message(s) with expired leases: %s", len(reaped), reaped)
-            await broker.forget_lost_workers(pool, FORGET_LOST_WORKERS_AFTER_S)
+            await registry.forget_lost_workers(pool, FORGET_LOST_WORKERS_AFTER_S)
         except psycopg.Error:
             log.exception("reaper failed")
         await asyncio.sleep(settings.reaper_interval_s)

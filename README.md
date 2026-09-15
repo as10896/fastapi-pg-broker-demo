@@ -201,7 +201,11 @@ sql/schema.sql          Tables, partial indexes, NOTIFY triggers
 app/
   config.py             Settings from environment variables
   db.py                 Connection pool (psycopg_pool), schema bootstrap
-  broker.py             Every broker operation, as SQL constants plus thin async functions
+  broker/               Every broker operation, as SQL constants plus thin async functions
+    messages.py         Publishing and the message lifecycle (claim, ack, nack, reap, dead letters)
+    monitoring.py       Read-only queries for the UI
+    registry.py         Worker and consumer heartbeats
+    control.py          Commands from the web app to workers
   notifier.py           LISTEN connection that wakes waiting loops
   consumer.py           The consumer loop: claim, handle, ack / nack
   worker.py             Worker process: consumers, heartbeats, remote commands (python -m app.worker)

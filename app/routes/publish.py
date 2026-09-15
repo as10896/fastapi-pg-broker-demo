@@ -5,7 +5,7 @@ from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
-from app import broker
+from app.broker import messages, monitoring
 from app.web import PoolDep, Snippet, redirect, render
 
 router = APIRouter()
@@ -15,7 +15,7 @@ QUEUE_PATTERN = r"^[A-Za-z0-9_.:-]+$"
 SNIPPETS = [
     Snippet(
         "Publish (bulk insert)",
-        broker.PUBLISH_SQL,
+        messages.PUBLISH_SQL,
         "Publishing is just an INSERT. One statement inserts any number of messages; "
         "generate_series numbers them. Any client that can INSERT into this table is a producer.",
     ),
@@ -68,7 +68,7 @@ async def publish_page(request: Request, pool: PoolDep):
         "publish.html",
         form=PublishForm(),
         presets=PRESETS,
-        queues=await broker.list_queues(pool),
+        queues=await monitoring.list_queues(pool),
         queue_pattern=QUEUE_PATTERN,
         snippets=SNIPPETS,
     )
@@ -84,7 +84,7 @@ async def publish_messages(form: Annotated[PublishForm, Form()], pool: PoolDep):
         return redirect("/publish", "Payload must be a JSON object.")
     payload["fail_probability"] = form.fail_percent / 100
 
-    result = await broker.publish(
+    result = await messages.publish(
         pool,
         queue=form.queue,
         payload=payload,

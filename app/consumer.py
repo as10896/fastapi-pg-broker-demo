@@ -11,8 +11,8 @@ from datetime import UTC, datetime
 
 import psycopg
 
-from app import broker
-from app.broker import Message
+from app.broker import messages
+from app.broker.messages import Message
 from app.config import settings
 from app.db import Pool
 from app.notifier import Notifier
@@ -56,7 +56,7 @@ class Consumer:
 
     async def _step(self, pool: Pool, notifier: Notifier) -> None:
         seen = notifier.version
-        message = await broker.claim(pool, self.queue, self.id)
+        message = await messages.claim(pool, self.queue, self.id)
         if message is None:
             self.state = "idle"
             await notifier.wait_newer(seen, settings.poll_interval_s)
@@ -68,11 +68,11 @@ class Consumer:
             await handle(message, self.work_ms)
         except Exception as exc:
             self.failed += 1
-            if await broker.nack(pool, message.id, self.id, str(exc)) is None:
+            if await messages.nack(pool, message.id, self.id, str(exc)) is None:
                 log.warning("%s: lease on message %s was lost before nack", self.id, message.id)
         else:
             self.processed += 1
-            if not await broker.ack(pool, message.id, self.id):
+            if not await messages.ack(pool, message.id, self.id):
                 log.warning("%s: lease on message %s was lost before ack", self.id, message.id)
         finally:
             self.current_message_id = None

@@ -86,6 +86,16 @@ Changes in `app/` or `sql/` are synced into the containers, which then restart; 
 
 ## How it works
 
+The Mermaid diagrams in [`docs/`](docs) show these mechanisms step by step.
+
+| Diagram                                                           | Shows                                                          |
+| ----------------------------------------------------------------- | -------------------------------------------------------------- |
+| [`erd.mmd`](docs/erd.mmd)                                         | Every table and how they relate                                |
+| [`sequence-message-flow.mmd`](docs/sequence-message-flow.mmd)     | A message from publish to ack, woken up by LISTEN / NOTIFY     |
+| [`sequence-skip-locked.mmd`](docs/sequence-skip-locked.mmd)       | Two consumers claiming at once, with and without `SKIP LOCKED` |
+| [`sequence-crash-recovery.mmd`](docs/sequence-crash-recovery.mmd) | Leases and the reaper recovering a crashed consumer's message  |
+| [`sequence-remote-control.mmd`](docs/sequence-remote-control.mmd) | Killing a consumer from the web UI, through Postgres           |
+
 ### The table
 
 ```sql
@@ -138,6 +148,9 @@ RETURNING m.*;
   so the row lock lasts only milliseconds; afterwards `status = 'processing'` keeps other
   consumers away, and no transaction stays open while the message is handled.
 
+[`docs/sequence-skip-locked.mmd`](docs/sequence-skip-locked.mmd) walks through two consumers
+claiming at the same moment with `SKIP LOCKED`, with `FOR UPDATE` alone, and with no lock.
+
 ### Ack, nack, retry, dead letters
 
 - **Ack**: `status = 'done'`, but only if `locked_by` is still us.
@@ -165,6 +178,9 @@ frozen for longer than the timeout) can be processed twice. Handlers should be i
 On `SIGTERM` (`docker compose stop`), a worker lets its consumers finish their current message
 (up to 5 s) and deregisters itself.
 
+Step by step, including a consumer that was only frozen and comes back too late:
+[`docs/sequence-crash-recovery.mmd`](docs/sequence-crash-recovery.mmd).
+
 ### LISTEN / NOTIFY
 
 A trigger calls `pg_notify('broker_messages', queue)` when a ready message is inserted or
@@ -172,6 +188,8 @@ becomes pending again. Each worker keeps one `LISTEN` connection and wakes its i
 when a notification arrives. Notifications are sent on commit, and identical ones in one
 transaction are merged, so a bulk insert of 10,000 rows sends one. Consumers still poll every
 second as a fallback, which also catches delayed messages and retries becoming due.
+The whole path of a message, from the form to the ack, is in
+[`docs/sequence-message-flow.mmd`](docs/sequence-message-flow.mmd).
 
 ### Remote control
 
@@ -179,6 +197,7 @@ Workers expose no ports, so the web app cannot call them. To start, stop or kill
 it inserts a row into `worker_commands`; a trigger sends `NOTIFY broker_control`, and the
 worker takes its commands with `DELETE … WHERE id IN (SELECT … FOR UPDATE SKIP LOCKED)
 RETURNING …`. This is how Celery's `celery control` works too, through the broker.
+See [`docs/sequence-remote-control.mmd`](docs/sequence-remote-control.mmd).
 
 ### The locking experiment
 
@@ -187,25 +206,25 @@ changing only the claim query. Each job is handled _inside_ the transaction that
 any row lock lasts for the whole job. Its consumers are asyncio tasks inside the web app, working
 on their own tables; the `worker` service is not involved.
 
-| Mode                     | Result                                                                                   |
-| ------------------------ | ---------------------------------------------------------------------------------------- |
-| No lock                  | Consumers read the same pending row and all process it: many duplicates                  |
-| `FOR UPDATE`             | No duplicates, but consumers wait on each other's locks: about as slow as one consumer   |
-| `FOR UPDATE SKIP LOCKED` | No duplicates and full parallelism                                                       |
+| Mode                     | Result                                                                                 |
+| ------------------------ | -------------------------------------------------------------------------------------- |
+| No lock                  | Consumers read the same pending row and all process it: many duplicates                |
+| `FOR UPDATE`             | No duplicates, but consumers wait on each other's locks: about as slow as one consumer |
+| `FOR UPDATE SKIP LOCKED` | No duplicates and full parallelism                                                     |
 
 ## Workers and consumers
 
 A **worker** is a process; a **consumer** is a loop inside it. One worker runs several consumers.
 
-|                | Worker                                                                                                    | Consumer                                              |
-| -------------- | --------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
-| What it is     | An OS process: one replica of the `worker` service                                                        | An asyncio task inside a worker                       |
-| Code           | `Worker` in `app/worker.py`                                                                               | `Consumer` in `app/consumer.py`                       |
-| Job            | Owns what the process shares: connection pool, `LISTEN` connection, heartbeats, command loop, reaper      | Claim a message, handle it, ack or nack it, repeat    |
-| How many       | `docker compose up -d --scale worker=N`                                                                   | `--concurrency` per worker, or more from the UI       |
-| Table          | `workers`                                                                                                 | `consumers` (`worker_id` → `workers.id`)              |
-| Id             | `3bc3a49e6fdf-653e` (hostname and a random suffix)                                                        | `3bc3a49e6fdf-653e-c2`                                |
-| When it dies   | `docker compose kill worker` stops all of its consumers                                                   | _Kill_ on the Workers page stops only that consumer   |
+|              | Worker                                                                                               | Consumer                                            |
+| ------------ | ---------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| What it is   | An OS process: one replica of the `worker` service                                                   | An asyncio task inside a worker                     |
+| Code         | `Worker` in `app/worker.py`                                                                          | `Consumer` in `app/consumer.py`                     |
+| Job          | Owns what the process shares: connection pool, `LISTEN` connection, heartbeats, command loop, reaper | Claim a message, handle it, ack or nack it, repeat  |
+| How many     | `docker compose up -d --scale worker=N`                                                              | `--concurrency` per worker, or more from the UI     |
+| Table        | `workers`                                                                                            | `consumers` (`worker_id` → `workers.id`)            |
+| Id           | `3bc3a49e6fdf-653e` (hostname and a random suffix)                                                   | `3bc3a49e6fdf-653e-c2`                              |
+| When it dies | `docker compose kill worker` stops all of its consumers                                              | _Kill_ on the Workers page stops only that consumer |
 
 Each responsibility sits at the level where it belongs:
 
@@ -233,6 +252,7 @@ web app, and no worker is involved.
 compose.yaml            db (internal), app (port 8000), worker (internal)
 Dockerfile
 sql/schema.sql          Tables, partial indexes, NOTIFY triggers
+docs/                   ERD and sequence diagrams (Mermaid)
 app/
   config.py             Settings from environment variables
   db.py                 Connection pool (psycopg_pool), schema bootstrap

@@ -181,7 +181,19 @@ claiming at the same moment with `SKIP LOCKED`, with `FOR UPDATE` alone, and wit
 ### Workers, leases and crash recovery
 
 A worker process runs `--concurrency` consumers as asyncio tasks, each with its own claim, handle,
-ack loop. A consumer that crashes mid-message never acks it. To recover such messages:
+ack loop. A consumer that crashes mid-message never acks it, and from the outside a crashed
+consumer looks just like a slow one. Two ideas deal with that:
+
+- A **lease** is a claim on a message that expires unless its holder keeps renewing it, like a
+  library loan that must be extended before its due date. Here the lease is the `locked_by` and
+  `locked_at` columns: claiming a message sets both, and renewing moves `locked_at` forward.
+- A **reaper** is a background job that periodically finds expired leases and takes their
+  messages back, because nothing in a database changes by itself as time passes. The name comes
+  from Unix, where a parent process "reaps" its dead child processes; other job queues call the
+  same job a rescuer, a lifeline or a janitor. This one also removes workers that stopped sending
+  heartbeats from the registry.
+
+Put together:
 
 1. Every second, each worker sends a heartbeat (`workers` and `consumers` tables) that also
    renews `locked_at` on every message its consumers are processing.

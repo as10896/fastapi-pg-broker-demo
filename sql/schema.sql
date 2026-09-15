@@ -151,7 +151,7 @@ CREATE OR REPLACE TRIGGER worker_commands_notify
 CREATE TABLE IF NOT EXISTS experiments (
     id         bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     jobs       integer     NOT NULL,
-    workers    integer     NOT NULL,
+    consumers  integer     NOT NULL,
     job_ms     integer     NOT NULL,
     created_at timestamptz NOT NULL DEFAULT now()
 );
@@ -182,9 +182,24 @@ CREATE TABLE IF NOT EXISTS experiment_jobs (
 CREATE TABLE IF NOT EXISTS experiment_executions (
     run_id      bigint      NOT NULL REFERENCES experiment_runs (id) ON DELETE CASCADE,
     job_id      integer     NOT NULL,
-    worker      integer     NOT NULL,
+    consumer    integer     NOT NULL,
     executed_at timestamptz NOT NULL DEFAULT clock_timestamp()
 );
 
 CREATE INDEX IF NOT EXISTS experiment_executions_run_idx
     ON experiment_executions (run_id);
+
+-- Databases created before the experiment's "workers" were renamed "consumers"
+-- still have the old column names: rename them in place, keeping the data.
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.columns
+               WHERE table_name = 'experiments' AND column_name = 'workers') THEN
+        ALTER TABLE experiments RENAME COLUMN workers TO consumers;
+    END IF;
+    IF EXISTS (SELECT 1 FROM information_schema.columns
+               WHERE table_name = 'experiment_executions' AND column_name = 'worker') THEN
+        ALTER TABLE experiment_executions RENAME COLUMN worker TO consumer;
+    END IF;
+END
+$$;

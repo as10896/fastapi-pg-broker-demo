@@ -14,7 +14,7 @@ router = APIRouter()
 
 SNIPPETS = [
     Snippet(
-        "Each experiment worker's loop",
+        "Each experiment consumer's loop",
         """
 BEGIN;
   <claim query of the selected mode>           -- returns one job id, or nothing
@@ -22,12 +22,13 @@ BEGIN;
   WITH done AS (
       UPDATE experiment_jobs SET status = 'done' WHERE run_id = $1 AND id = $2
   )
-  INSERT INTO experiment_executions (run_id, job_id, worker) VALUES ($1, $2, $3);
+  INSERT INTO experiment_executions (run_id, job_id, consumer) VALUES ($1, $2, $3);
 COMMIT;
 -- If the claim returned nothing but pending jobs remain, try again.
 """,
-        "Every worker has its own connection. Each execution of a job is recorded, so "
-        "executions − distinct jobs = jobs that were processed more than once.",
+        "Every consumer is an asyncio task in the web app with its own connection. Each "
+        "execution of a job is recorded, so executions − distinct jobs = jobs that were "
+        "processed more than once.",
     ),
     Snippet("Complete a job", experiment.COMPLETE_JOB_SQL),
     Snippet("Results", experiment.RESULTS_SQL),
@@ -36,7 +37,7 @@ COMMIT;
 
 class ExperimentForm(BaseModel):
     jobs: int = Field(default=50, ge=1, le=500)
-    workers: int = Field(default=5, ge=1, le=20)
+    consumers: int = Field(default=5, ge=1, le=20)
     job_ms: int = Field(default=100, ge=0, le=2000)
     modes: list[str] = []
 
@@ -53,10 +54,10 @@ async def _results(
         "max_throughput": max((r["throughput"] for r in runs), default=0),
     }
     if runs:
-        jobs, workers, job_ms = runs[0]["jobs"], runs[0]["workers"], runs[0]["job_ms"]
-        context["setup"] = {"jobs": jobs, "workers": workers, "job_ms": job_ms}
+        jobs, consumers, job_ms = runs[0]["jobs"], runs[0]["consumers"], runs[0]["job_ms"]
+        context["setup"] = {"jobs": jobs, "consumers": consumers, "job_ms": job_ms}
         context["serial_s"] = jobs * job_ms / 1000
-        context["parallel_s"] = math.ceil(jobs / workers) * job_ms / 1000
+        context["parallel_s"] = math.ceil(jobs / consumers) * job_ms / 1000
     return context
 
 
@@ -96,7 +97,7 @@ async def run_experiment(form: Annotated[ExperimentForm, Form()], runner: Experi
     if runner.running:
         return redirect("/experiment", "An experiment is already running.")
     experiment_id = await runner.start(
-        modes=modes, jobs=form.jobs, workers=form.workers, job_ms=form.job_ms
+        modes=modes, jobs=form.jobs, consumers=form.consumers, job_ms=form.job_ms
     )
     return redirect("/experiment", f"Experiment #{experiment_id} started.", id=experiment_id)
 

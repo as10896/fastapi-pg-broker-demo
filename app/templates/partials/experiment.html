@@ -9,9 +9,9 @@
     {% if running %}<span class="badge badge-processing">running</span>{% endif %}
   </h2>
   <p class="muted">
-    {{ setup.jobs }} jobs × {{ setup.job_ms }} ms with {{ setup.workers }} workers.
-    One worker alone would need ≈ {{ "%.1f" | format(serial_s) }} s;
-    perfectly parallel workers ≈ {{ "%.1f" | format(parallel_s) }} s.
+    {{ setup.jobs }} jobs × {{ setup.job_ms }} ms with {{ setup.consumers }} consumers.
+    One consumer alone would need ≈ {{ "%.1f" | format(serial_s) }} s;
+    perfectly parallel consumers ≈ {{ "%.1f" | format(parallel_s) }} s.
   </p>
   <div class="table-wrap">
     <table class="results">
@@ -24,7 +24,7 @@
           <th class="num">Executions</th>
           <th class="num">Duplicates</th>
           <th>Throughput</th>
-          <th>Executions per worker</th>
+          <th>Executions per consumer</th>
         </tr>
       </thead>
       <tbody>
@@ -43,9 +43,9 @@
           </td>
           <td>
             <div class="mini-bars">
-              {% set most = r.per_worker | map(attribute="executions") | max if r.per_worker else 0 %}
-              {% for w in r.per_worker %}
-              <span title="worker {{ w.worker }}: {{ w.executions }}" style="height: {{ (100 * w.executions / most) | round(0) if most else 0 }}%"></span>
+              {% set most = r.per_consumer | map(attribute="executions") | max if r.per_consumer else 0 %}
+              {% for c in r.per_consumer %}
+              <span title="consumer {{ c.consumer }}: {{ c.executions }}" style="height: {{ (100 * c.executions / most) | round(0) if most else 0 }}%"></span>
               {% endfor %}
             </div>
           </td>

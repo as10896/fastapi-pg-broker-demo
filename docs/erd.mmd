@@ -56,7 +56,7 @@ erDiagram
     experiments {
         bigint      id         PK
         integer     jobs
-        integer     workers
+        integer     consumers
         integer     job_ms
         timestamptz created_at
     }
@@ -80,7 +80,7 @@ erDiagram
     experiment_executions {
         bigint      run_id      FK
         integer     job_id      "experiment_jobs.id"
-        integer     worker
+        integer     consumer
         timestamptz executed_at
     }
 

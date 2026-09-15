@@ -33,6 +33,40 @@ browser ──▶ app ──▶ db ◀── worker (× N)
 `app` and `worker` never talk to each other. Everything goes through Postgres, including the
 buttons in the UI that start, stop or kill consumers inside a worker.
 
+## Workers and consumers
+
+A **worker** is a process; a **consumer** is a loop inside it. One worker runs several consumers.
+
+|                | Worker                                                                                                    | Consumer                                              |
+| -------------- | --------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
+| What it is     | An OS process: one replica of the `worker` service                                                        | An asyncio task inside a worker                       |
+| Code           | `Worker` in `app/worker.py`                                                                               | `Consumer` in `app/consumer.py`                       |
+| Job            | Owns what the process shares: connection pool, `LISTEN` connection, heartbeats, command loop, reaper      | Claim a message, handle it, ack or nack it, repeat    |
+| How many       | `docker compose up -d --scale worker=N`                                                                   | `--concurrency` per worker, or more from the UI       |
+| Table          | `workers`                                                                                                 | `consumers` (`worker_id` → `workers.id`)              |
+| Id             | `3bc3a49e6fdf-653e` (hostname and a random suffix)                                                        | `3bc3a49e6fdf-653e-c2`                                |
+| When it dies   | `docker compose kill worker` stops all of its consumers                                                   | _Kill_ on the Workers page stops only that consumer   |
+
+Each responsibility sits at the level where it belongs:
+
+- **A consumer holds messages.** It handles at most one at a time, so `messages.locked_by` is a
+  consumer id, and acks and nacks check it.
+- **A worker proves liveness.** Its heartbeat reports all of its consumers and renews the leases
+  of the messages they hold.
+- **A worker receives commands.** It is the process that actually exists, so the UI addresses
+  commands to a worker, which then starts, stops or kills its consumers.
+
+Throughput depends on the total number of consumers. Add them inside a worker (`--concurrency`)
+or add workers (`--scale`).
+
+Compared with Celery, a worker is a `celery worker` process and its consumers are its pool
+(`--concurrency`). The consumers share one event loop, like Celery's `gevent` or `eventlet` pools
+rather than the default `prefork`, so they suit I/O-bound handlers. A CPU-bound handler would
+block the other consumers of its worker: scale that kind of work with more workers instead.
+
+The locking experiment also talks about consumers: there, they are asyncio tasks inside the
+web app, and no worker is involved.
+
 ## Quick start
 
 ```bash
@@ -182,15 +216,16 @@ RETURNING …`. This is how Celery's `celery control` works too, through the bro
 
 ### The locking experiment
 
-The experiment page processes the same jobs three times, changing only the claim query. Each
-job is handled _inside_ the transaction that selected it, so any row lock lasts for the whole
-job. It runs inside the web app, on its own tables, and does not involve the workers.
+The experiment page processes the same jobs three times with the same number of consumers,
+changing only the claim query. Each job is handled _inside_ the transaction that selected it, so
+any row lock lasts for the whole job. Its consumers are asyncio tasks inside the web app, working
+on their own tables; the `worker` service is not involved.
 
-| Mode                     | Result                                                                             |
-| ------------------------ | ---------------------------------------------------------------------------------- |
-| No lock                  | Workers read the same pending row and all process it: many duplicates              |
-| `FOR UPDATE`             | No duplicates, but workers wait on each other's locks: about as slow as one worker |
-| `FOR UPDATE SKIP LOCKED` | No duplicates and full parallelism                                                 |
+| Mode                     | Result                                                                                   |
+| ------------------------ | ---------------------------------------------------------------------------------------- |
+| No lock                  | Consumers read the same pending row and all process it: many duplicates                  |
+| `FOR UPDATE`             | No duplicates, but consumers wait on each other's locks: about as slow as one consumer   |
+| `FOR UPDATE SKIP LOCKED` | No duplicates and full parallelism                                                       |
 
 ## Project layout
 

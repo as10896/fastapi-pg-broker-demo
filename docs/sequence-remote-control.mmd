@@ -1,0 +1,49 @@
+---
+title: Killing a consumer from the web UI (commands through Postgres)
+---
+sequenceDiagram
+    %% Web app: app/routes/workers.py. SQL: app/broker/control.py, app/broker/registry.py.
+    %% Worker side: app/worker.py (Worker._command_loop, Worker.kill_consumer).
+    %% Workers expose no ports: the web app can only reach them through Postgres.
+
+    participant Browser
+    participant App as Web app
+    participant DB as Postgres
+    box Worker container
+        participant W as Worker (command loop)
+        participant C as Consumer
+    end
+
+    Note over W: At startup the worker registers (heartbeat) and LISTENs on broker_control
+    W->>DB: TAKE_COMMANDS
+    DB-->>W: none
+    W->>W: wait for a notification (at most 1 s)
+
+    Browser->>App: POST /workers/{worker_id}/consumers/{consumer_id}/kill
+    App->>DB: SELECT consumer (which message it holds, for the notice)
+    DB-->>App: current_message_id
+    App->>DB: SEND_COMMAND: INSERT INTO worker_commands (worker_id, 'kill', {consumer_id})
+
+    alt worker is not registered
+        DB-->>App: foreign key violation
+        App-->>Browser: 303 See Other, notice: worker is not registered anymore
+    else worker is registered
+        Note right of DB: trigger worker_commands_notify:<br/>pg_notify('broker_control', worker_id)
+        DB-->>App: inserted (committed)
+        App-->>Browser: 303 See Other, notice: Killed ... while it held message N
+        DB-)W: NOTIFY broker_control
+        W->>DB: TAKE_COMMANDS: DELETE ... WHERE id IN (SELECT ... FOR UPDATE SKIP LOCKED) RETURNING
+        DB-->>W: kill {consumer_id}
+        destroy C
+        W->>C: task.cancel(): no ack, no nack
+        Note over W: The consumer is removed from the worker, so later heartbeats<br/>neither refresh its row nor renew its lease
+    end
+
+    loop htmx, every 1 s
+        Browser->>App: GET /partials/workers
+        App->>DB: list workers and consumers (with heartbeat age)
+        DB-->>App: rows
+        App-->>Browser: HTML fragment: the consumer shows as lost after 3 s
+    end
+
+    Note over DB: The message it held is recovered by the reaper once its lease expires<br/>(see sequence-crash-recovery.mmd)

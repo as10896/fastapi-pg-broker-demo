@@ -1,0 +1,48 @@
+---
+title: Competing consumers claiming from the same queue
+---
+sequenceDiagram
+    %% Two consumers run the claim query (app/broker/messages.py CLAIM_SQL) at the same moment.
+    %% Each claim is one autocommit statement: SELECT ... LIMIT 1 [locking clause] inside an UPDATE.
+
+    participant A as Consumer A
+    participant DB as Postgres (messages)
+    participant B as Consumer B
+
+    Note over DB: message 1 pending<br/>message 2 pending
+
+    alt FOR UPDATE SKIP LOCKED (what the broker uses)
+        A->>DB: CLAIM
+        Note right of DB: A's SELECT picks message 1 and locks it
+        B->>DB: CLAIM (at the same moment)
+        Note right of DB: message 1 is locked by A, so B skips it<br/>instead of waiting, and picks message 2
+        DB-->>A: message 1 (status=processing, locked_by=A)
+        DB-->>B: message 2 (status=processing, locked_by=B)
+        Note over A,B: Both work in parallel. The statement has committed, so no row lock<br/>and no transaction stay open while they work: status=processing keeps others away.
+        A->>DB: ACK message 1 WHERE locked_by = A
+        B->>DB: ACK message 2 WHERE locked_by = B
+
+    else FOR UPDATE without SKIP LOCKED
+        A->>DB: CLAIM
+        Note right of DB: A's SELECT picks message 1 and locks it
+        B->>DB: CLAIM (at the same moment)
+        Note right of DB: message 1 is locked, so B blocks until A commits
+        DB-->>A: message 1 (status=processing, locked_by=A)
+        Note right of DB: B wakes up and re-checks message 1: no longer pending.<br/>LIMIT 1 was already spent on it, so B gets nothing
+        DB-->>B: no row, although message 2 is pending
+        B->>DB: CLAIM again
+        DB-->>B: message 2
+        Note over A,B: Correct, but consumers queue up behind each other's locks
+
+    else No locking clause
+        A->>DB: CLAIM
+        Note right of DB: A's SELECT finds message 1 (takes no lock)
+        B->>DB: CLAIM (at the same moment)
+        Note right of DB: B's SELECT also finds message 1
+        DB-->>A: message 1 (locked_by=A)
+        Note right of DB: B's UPDATE waits for A's row lock, then only re-checks<br/>id = 1, which still matches, and overwrites the claim
+        DB-->>B: message 1 again (locked_by=B)
+        Note over A,B: Both process message 1: duplicate work
+        A->>DB: ACK message 1 WHERE locked_by = A
+        DB-->>A: 0 rows: A's ack is rejected, but the work was already done twice
+    end

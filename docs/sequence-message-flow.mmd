@@ -1,0 +1,49 @@
+---
+title: A message from publish to ack (LISTEN / NOTIFY wake-up)
+---
+sequenceDiagram
+    %% Web app: app/routes/publish.py. SQL: app/broker/messages.py.
+    %% Wake-up: app/notifier.py (one LISTEN connection per worker). Consumer loop: app/consumer.py.
+
+    participant Browser
+    participant App as Web app
+    participant DB as Postgres
+    box Worker container
+        participant N as Notifier (LISTEN connection)
+        participant C as Consumer
+    end
+
+    N->>DB: LISTEN broker_messages, broker_control
+
+    Note over C: Idle loop: read notifier.version first,<br/>so a NOTIFY that arrives during the claim is not missed
+    C->>DB: CLAIM
+    DB-->>C: no row
+    C->>N: wait for a newer version (at most 1 s, then claim again anyway)
+
+    Browser->>App: POST /publish
+    App->>DB: PUBLISH: INSERT ... SELECT FROM generate_series(1, count)
+    Note right of DB: trigger messages_notify_insert:<br/>pg_notify('broker_messages', queue), held until commit.<br/>Identical notifications in one transaction are merged,<br/>so a bulk insert sends one
+    DB-->>App: count, first_id, last_id (committed)
+    App-->>Browser: 303 See Other, /publish?notice=Published ...
+
+    DB-)N: NOTIFY broker_messages (delivered after commit)
+    N->>C: version + 1, wake up
+
+    C->>DB: CLAIM (FOR UPDATE SKIP LOCKED)
+    DB-->>C: message (status=processing, locked_by=C, attempts=1)
+    activate C
+    Note over C: handle the message (the demo sleeps work_ms).<br/>Meanwhile the worker's heartbeat renews the lease every second
+    alt handler succeeds
+        C->>DB: ACK: status = done
+    else handler raises
+        C->>DB: NACK: pending again after 2^attempts s, or dead at max_attempts
+        Note over C,DB: A delayed retry sends no NOTIFY: the consumer's 1 s poll picks it up
+    end
+    deactivate C
+
+    loop htmx, every 1 s
+        Browser->>App: GET /partials/stats
+        App->>DB: queue statistics
+        DB-->>App: counts per queue and status
+        App-->>Browser: HTML fragment
+    end

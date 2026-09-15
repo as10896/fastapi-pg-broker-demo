@@ -1,0 +1,50 @@
+---
+title: Recovering a message from a crashed consumer (leases and the reaper)
+---
+sequenceDiagram
+    %% SQL: CLAIM_SQL, RENEW_LEASE_SQL, REAP_SQL, ACK_SQL in app/broker/messages.py.
+    %% Heartbeats: app/worker.py. Reaper: app/reaper.py (runs in the web app and in every worker).
+    %% Defaults: heartbeat every 1 s, reaper every 2 s, visibility timeout 10 s.
+
+    box Worker 1
+        participant A as Consumer A
+        participant HB as Heartbeat
+    end
+    participant DB as Postgres
+    participant R as Reaper
+    box Worker 2
+        participant B as Consumer B
+    end
+
+    A->>DB: CLAIM
+    DB-->>A: message 7 (processing, locked_by=A, attempts=1)
+
+    loop every 1 s while A is working
+        HB->>DB: heartbeat + RENEW_LEASE: locked_at = now() WHERE locked_by = A
+    end
+
+    Note over A: A crashes: killed from the UI, or the container gets SIGKILL.<br/>No ack, no nack
+    Note over HB: A's lease is no longer renewed (if the whole worker died,<br/>its heartbeat stops too), so locked_at stops moving
+
+    loop every 2 s
+        R->>DB: REAP: processing AND locked_at older than 10 s (FOR UPDATE SKIP LOCKED)
+        DB-->>R: nothing yet
+    end
+
+    Note over DB: 10 s after the last renewal
+    R->>DB: REAP
+    Note right of DB: message 7: status=pending, locked_by=NULL,<br/>last_error = lease expired (dead instead if attempts ≥ max_attempts)
+    DB-->>R: [7]
+    DB-)B: NOTIFY broker_messages (trigger: status changed to pending)
+
+    B->>DB: CLAIM
+    DB-->>B: message 7 (processing, locked_by=B, attempts=2)
+
+    opt A was only frozen, not dead, and comes back
+        A->>DB: ACK message 7 WHERE locked_by = A
+        DB-->>A: 0 rows: the lease was lost, so the ack is ignored
+        Note over A,B: The message was handled twice. Delivery is at-least-once:<br/>handlers must be idempotent
+    end
+
+    B->>DB: ACK message 7 WHERE locked_by = B
+    DB-->>B: 1 row: message 7 done

@@ -18,55 +18,6 @@ Every page shows the exact SQL it runs.
 | Priorities                           | `ORDER BY priority DESC, id`                                        |
 | Remote control of workers            | A `worker_commands` table, consumed the same way                    |
 
-## Services
-
-```
-browser ──▶ app ──▶ db ◀── worker (× N)
-```
-
-| Service  | Role                                                            | Reachable from the host |
-| -------- | --------------------------------------------------------------- | ----------------------- |
-| `db`     | PostgreSQL 18, the broker                                       | No                      |
-| `app`    | Web UI, producer, locking experiment                            | <http://localhost:8000> |
-| `worker` | Consumer process (`python -m app.worker`), like `celery worker` | No                      |
-
-`app` and `worker` never talk to each other. Everything goes through Postgres, including the
-buttons in the UI that start, stop or kill consumers inside a worker.
-
-## Workers and consumers
-
-A **worker** is a process; a **consumer** is a loop inside it. One worker runs several consumers.
-
-|                | Worker                                                                                                    | Consumer                                              |
-| -------------- | --------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
-| What it is     | An OS process: one replica of the `worker` service                                                        | An asyncio task inside a worker                       |
-| Code           | `Worker` in `app/worker.py`                                                                               | `Consumer` in `app/consumer.py`                       |
-| Job            | Owns what the process shares: connection pool, `LISTEN` connection, heartbeats, command loop, reaper      | Claim a message, handle it, ack or nack it, repeat    |
-| How many       | `docker compose up -d --scale worker=N`                                                                   | `--concurrency` per worker, or more from the UI       |
-| Table          | `workers`                                                                                                 | `consumers` (`worker_id` → `workers.id`)              |
-| Id             | `3bc3a49e6fdf-653e` (hostname and a random suffix)                                                        | `3bc3a49e6fdf-653e-c2`                                |
-| When it dies   | `docker compose kill worker` stops all of its consumers                                                   | _Kill_ on the Workers page stops only that consumer   |
-
-Each responsibility sits at the level where it belongs:
-
-- **A consumer holds messages.** It handles at most one at a time, so `messages.locked_by` is a
-  consumer id, and acks and nacks check it.
-- **A worker proves liveness.** Its heartbeat reports all of its consumers and renews the leases
-  of the messages they hold.
-- **A worker receives commands.** It is the process that actually exists, so the UI addresses
-  commands to a worker, which then starts, stops or kills its consumers.
-
-Throughput depends on the total number of consumers. Add them inside a worker (`--concurrency`)
-or add workers (`--scale`).
-
-Compared with Celery, a worker is a `celery worker` process and its consumers are its pool
-(`--concurrency`). The consumers share one event loop, like Celery's `gevent` or `eventlet` pools
-rather than the default `prefork`, so they suit I/O-bound handlers. A CPU-bound handler would
-block the other consumers of its worker: scale that kind of work with more workers instead.
-
-The locking experiment also talks about consumers: there, they are asyncio tasks inside the
-web app, and no worker is involved.
-
 ## Quick start
 
 ```bash
@@ -86,6 +37,21 @@ docker compose down -v                   # stop and delete all data
 
 Worker options are in `compose.yaml`:
 `python -m app.worker --queue default --concurrency 2 --work-ms 300`.
+
+## Services
+
+```
+browser ──▶ app ──▶ db ◀── worker (× N)
+```
+
+| Service  | Role                                                            | Reachable from the host |
+| -------- | --------------------------------------------------------------- | ----------------------- |
+| `db`     | PostgreSQL 18, the broker                                       | No                      |
+| `app`    | Web UI, producer, locking experiment                            | <http://localhost:8000> |
+| `worker` | Consumer process (`python -m app.worker`), like `celery worker` | No                      |
+
+`app` and `worker` never talk to each other. Everything goes through Postgres, including the
+buttons in the UI that start, stop or kill consumers inside a worker.
 
 ## Development
 
@@ -226,6 +192,40 @@ on their own tables; the `worker` service is not involved.
 | No lock                  | Consumers read the same pending row and all process it: many duplicates                  |
 | `FOR UPDATE`             | No duplicates, but consumers wait on each other's locks: about as slow as one consumer   |
 | `FOR UPDATE SKIP LOCKED` | No duplicates and full parallelism                                                       |
+
+## Workers and consumers
+
+A **worker** is a process; a **consumer** is a loop inside it. One worker runs several consumers.
+
+|                | Worker                                                                                                    | Consumer                                              |
+| -------------- | --------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
+| What it is     | An OS process: one replica of the `worker` service                                                        | An asyncio task inside a worker                       |
+| Code           | `Worker` in `app/worker.py`                                                                               | `Consumer` in `app/consumer.py`                       |
+| Job            | Owns what the process shares: connection pool, `LISTEN` connection, heartbeats, command loop, reaper      | Claim a message, handle it, ack or nack it, repeat    |
+| How many       | `docker compose up -d --scale worker=N`                                                                   | `--concurrency` per worker, or more from the UI       |
+| Table          | `workers`                                                                                                 | `consumers` (`worker_id` → `workers.id`)              |
+| Id             | `3bc3a49e6fdf-653e` (hostname and a random suffix)                                                        | `3bc3a49e6fdf-653e-c2`                                |
+| When it dies   | `docker compose kill worker` stops all of its consumers                                                   | _Kill_ on the Workers page stops only that consumer   |
+
+Each responsibility sits at the level where it belongs:
+
+- **A consumer holds messages.** It handles at most one at a time, so `messages.locked_by` is a
+  consumer id, and acks and nacks check it.
+- **A worker proves liveness.** Its heartbeat reports all of its consumers and renews the leases
+  of the messages they hold.
+- **A worker receives commands.** It is the process that actually exists, so the UI addresses
+  commands to a worker, which then starts, stops or kills its consumers.
+
+Throughput depends on the total number of consumers. Add them inside a worker (`--concurrency`)
+or add workers (`--scale`).
+
+Compared with Celery, a worker is a `celery worker` process and its consumers are its pool
+(`--concurrency`). The consumers share one event loop, like Celery's `gevent` or `eventlet` pools
+rather than the default `prefork`, so they suit I/O-bound handlers. A CPU-bound handler would
+block the other consumers of its worker: scale that kind of work with more workers instead.
+
+The locking experiment also talks about consumers: there, they are asyncio tasks inside the
+web app, and no worker is involved.
 
 ## Project layout
 

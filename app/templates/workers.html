@@ -4,9 +4,10 @@
 {% block content %}
 <h1>Workers</h1>
 <p class="lead">
-  A <strong>worker</strong> is a process: a replica of the <code>worker</code> compose service,
-  like a <code>celery worker</code>. It runs several <strong>consumers</strong>, loops that claim a
-  message, handle it, then ack or nack it. Workers only talk to Postgres and expose no ports.
+  A <strong>worker</strong> is a process: a replica of the <code>worker</code> compose service.
+  It runs several <strong>consumers</strong>, loops that claim a message, handle it, then ack or
+  nack it. Workers only talk to Postgres and expose no ports. If you know Celery, a worker plays
+  the role of a <code>celery worker</code> process, but Celery is not used here.
 </p>
 
 {% set live = workers | rejectattr("lost") | list %}

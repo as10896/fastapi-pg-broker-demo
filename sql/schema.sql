@@ -84,9 +84,9 @@ CREATE OR REPLACE TRIGGER messages_notify_requeue
 -- ---------------------------------------------------------------------------
 -- Worker registry, kept fresh by heartbeats.
 --
--- A worker is one process: a replica of the `worker` compose service, like a
--- `celery worker`. It runs several consumers, concurrent loops that claim and
--- handle messages (its concurrency).
+-- A worker is one process: a replica of the `worker` compose service. It runs
+-- several consumers, concurrent loops that claim and handle messages (its
+-- concurrency).
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS workers (
     id           text PRIMARY KEY,
@@ -115,8 +115,7 @@ CREATE INDEX IF NOT EXISTS consumers_worker_idx
 
 -- ---------------------------------------------------------------------------
 -- Remote control. Workers expose no ports, so the web app cannot call them.
--- It sends commands through Postgres instead, the same way it sends messages
--- (Celery does the same through its broker with `celery control`).
+-- It sends commands through Postgres instead, the same way it sends messages.
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS worker_commands (
     id         bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,

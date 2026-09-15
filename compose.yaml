@@ -1,5 +1,5 @@
 # Only `app` publishes a port. `db` and `worker` are reachable only on the
-# compose network: like a Celery deployment, workers just talk to the broker.
+# compose network: workers talk to nothing but the broker, which is Postgres.
 
 x-python-service: &python-service
   build: .

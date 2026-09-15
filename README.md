@@ -19,9 +19,12 @@ in a relational database: the queue lives in the same database, is backed up and
 same way, and a job can even be enqueued in the same transaction as the data it belongs to.
 
 The demo is a FastAPI + Jinja2 (+ htmx) web app that publishes messages and shows everything
-that happens, plus worker containers that consume them, like Celery workers. You can scale and
-crash workers, watch retries and dead letters, and compare locking strategies side by side.
-Every page shows the exact SQL it runs, and every broker feature maps to plain SQL:
+that happens, plus worker containers that consume them. The broker, the workers and their
+consumers are all implemented in this repo on top of psycopg: no Celery or other task-queue
+library is involved. Celery only comes up below as a familiar point of comparison.
+
+You can scale and crash workers, watch retries and dead letters, and compare locking strategies
+side by side. Every page shows the exact SQL it runs, and every broker feature maps to plain SQL:
 
 | Broker feature                       | How Postgres does it                                                |
 | ------------------------------------ | ------------------------------------------------------------------- |
@@ -61,11 +64,11 @@ Worker options are in `compose.yaml`:
 browser ──▶ app ──▶ db ◀── worker (× N)
 ```
 
-| Service  | Role                                                            | Reachable from the host |
-| -------- | --------------------------------------------------------------- | ----------------------- |
-| `db`     | PostgreSQL 18, the broker                                       | No                      |
-| `app`    | Web UI, producer, locking experiment                            | <http://localhost:8000> |
-| `worker` | Consumer process (`python -m app.worker`), like `celery worker` | No                      |
+| Service  | Role                                      | Reachable from the host |
+| -------- | ----------------------------------------- | ----------------------- |
+| `db`     | PostgreSQL 18, the broker                 | No                      |
+| `app`    | Web UI, producer, locking experiment      | <http://localhost:8000> |
+| `worker` | Consumer process (`python -m app.worker`) | No                      |
 
 `app` and `worker` never talk to each other. Everything goes through Postgres, including the
 buttons in the UI that start, stop or kill consumers inside a worker.
@@ -213,7 +216,8 @@ The whole path of a message, from the form to the ack, is in
 Workers expose no ports, so the web app cannot call them. To start, stop or kill consumers,
 it inserts a row into `worker_commands`; a trigger sends `NOTIFY broker_control`, and the
 worker takes its commands with `DELETE … WHERE id IN (SELECT … FOR UPDATE SKIP LOCKED)
-RETURNING …`. This is how Celery's `celery control` works too, through the broker.
+RETURNING …`. For comparison, Celery's `celery control` commands also reach workers through its
+broker rather than by calling them directly.
 See [`docs/sequence-remote-control.mmd`](docs/sequence-remote-control.mmd).
 
 ### The locking experiment
@@ -255,10 +259,12 @@ Each responsibility sits at the level where it belongs:
 Throughput depends on the total number of consumers. Add them inside a worker (`--concurrency`)
 or add workers (`--scale`).
 
-Compared with Celery, a worker is a `celery worker` process and its consumers are its pool
-(`--concurrency`). The consumers share one event loop, like Celery's `gevent` or `eventlet` pools
-rather than the default `prefork`, so they suit I/O-bound handlers. A CPU-bound handler would
-block the other consumers of its worker: scale that kind of work with more workers instead.
+If you know Celery, the roles map like this, even though Celery is not used here: a worker plays
+the part of a `celery worker` process, and its consumers correspond to that process's pool
+(`--concurrency`). Unlike Celery's default `prefork` pool, which runs each unit in a child
+process, these consumers share one event loop, closer to Celery's `gevent` or `eventlet` pools.
+They suit I/O-bound handlers; a CPU-bound handler would block the other consumers of its worker,
+so scale that kind of work with more workers instead.
 
 The locking experiment also talks about consumers: there, they are asyncio tasks inside the
 web app, and no worker is involved.

@@ -1,4 +1,4 @@
-"""Worker process: runs consumers against the broker, like `celery worker`.
+"""Worker process: runs several consumers against the Postgres broker.
 
     python -m app.worker --queue default --concurrency 2 --work-ms 300
 

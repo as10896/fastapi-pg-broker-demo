@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% from "macros.html" import sql_panel %}
+{% block title %}Messages{% endblock %}
+{% block content %}
+<h1>Messages</h1>
+
+<form method="get" action="/messages" class="filters">
+  <label>Queue
+    <select name="queue">
+      <option value="">All queues</option>
+      {% for q in queues %}<option value="{{ q }}"{% if q == filters.queue %} selected{% endif %}>{{ q }}</option>{% endfor %}
+    </select>
+  </label>
+  <label>Status
+    <select name="status">
+      <option value="">Any status</option>
+      {% for s in statuses %}<option value="{{ s }}"{% if s == filters.status %} selected{% endif %}>{{ s }}</option>{% endfor %}
+    </select>
+  </label>
+  <button class="button">Filter</button>
+</form>
+
+<div hx-get="/partials/messages?{{ request.query_params }}" hx-trigger="every 2s">
+  {% include "partials/messages.html" %}
+</div>
+
+{{ sql_panel(snippets) }}
+{% endblock %}

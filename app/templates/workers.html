@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% from "macros.html" import sql_panel %}
+{% block title %}Workers{% endblock %}
+{% block content %}
+<h1>Workers</h1>
+<p class="lead">
+  A <strong>worker</strong> is a process: a replica of the <code>worker</code> compose service,
+  like a <code>celery worker</code>. It runs several <strong>consumers</strong>, loops that claim a
+  message, handle it, then ack or nack it. Workers only talk to Postgres and expose no ports.
+</p>
+
+{% set live = workers | rejectattr("lost") | list %}
+<div class="grid-2">
+  <section class="panel">
+    <h2>Start consumers</h2>
+    {% if live %}
+    <form method="post" action="/workers/start" class="form">
+      <label>Worker
+        <select name="worker_id">
+          {% for w in live %}<option value="{{ w.id }}">{{ w.id }}</option>{% endfor %}
+        </select>
+      </label>
+      <div class="row">
+        <label>Count
+          <input type="number" name="count" value="{{ form.count }}" min="1" max="16" required>
+        </label>
+        <label>Queue
+          <input name="queue" value="{{ form.queue }}" required pattern="{{ queue_pattern[1:-1] }}" maxlength="64">
+        </label>
+        <label>Work per message (ms)
+          <input type="number" name="work_ms" value="{{ form.work_ms }}" min="0" max="60000" required>
+        </label>
+      </div>
+      <button class="button primary">Start</button>
+    </form>
+    <p class="hint">
+      The web app cannot reach the workers, so every button on this page inserts a row into
+      <code>worker_commands</code>. A trigger sends <code>NOTIFY broker_control</code> and the
+      worker executes the command right away.
+    </p>
+    {% else %}
+    <p class="muted">No worker is running. Start one with <code>docker compose up -d worker</code>, then reload this page.</p>
+    {% endif %}
+  </section>
+
+  <section class="panel">
+    <h2>Stop, kill, crash</h2>
+    <p><strong>Stop</strong> is graceful: the consumer finishes and acks its current message, then exits.</p>
+    <p>
+      <strong>Kill</strong> simulates a consumer crashing mid-message: no ack, no nack, and its lease
+      is no longer renewed. After {{ settings.visibility_timeout_s | round(1) }} s the reaper makes
+      the message pending again. Use a long work time (e.g. 5000 ms) so there is time to click.
+    </p>
+    <h3>From the terminal</h3>
+<pre><code>docker compose up -d --scale worker=3   # more worker processes
+docker compose kill worker              # SIGKILL every worker: a real crash
+docker compose up -d worker             # bring them back
+docker compose logs -f worker</code></pre>
+  </section>
+</div>
+
+<div hx-get="/partials/workers" hx-trigger="every 1s">
+  {% include "partials/workers.html" %}
+</div>
+
+{{ sql_panel(snippets) }}
+{% endblock %}

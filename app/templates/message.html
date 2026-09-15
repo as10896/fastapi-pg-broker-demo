@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}Message #{{ message.id }}{% endblock %}
+{% block content %}
+<p><a href="/messages">← All messages</a></p>
+<h1>Message #{{ message.id }}</h1>
+
+<div hx-get="/partials/messages/{{ message.id }}" hx-trigger="every 1s">
+  {% include "partials/message.html" %}
+</div>
+{% endblock %}

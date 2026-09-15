@@ -1,0 +1,25 @@
+{% macro badge(status, label=None) -%}
+<span class="badge badge-{{ status }}">{{ label or status }}</span>
+{%- endmacro %}
+
+{% macro message_status(m) -%}
+{%- if m.status == "pending" and m.available_at > now() -%}
+{{ badge("delayed", "delayed · " ~ (m.available_at | ago)) }}
+{%- else -%}
+{{ badge(m.status) }}
+{%- endif -%}
+{%- endmacro %}
+
+{% macro sql_panel(snippets) %}
+<section class="sql-panel">
+  <h2>SQL used on this page</h2>
+  <p class="muted">The exact statements the app runs. <code>%(name)s</code> placeholders are bound by psycopg.</p>
+  {% for s in snippets %}
+  <details>
+    <summary>{{ s.title }}</summary>
+    {% if s.note %}<p>{{ s.note }}</p>{% endif %}
+    <pre><code>{{ s.sql | trim }}</code></pre>
+  </details>
+  {% endfor %}
+</section>
+{% endmacro %}

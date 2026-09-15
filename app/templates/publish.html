@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% from "macros.html" import sql_panel %}
+{% block title %}Publish{% endblock %}
+{% block content %}
+<h1>Publish messages</h1>
+<p class="lead">Publishing is an <code>INSERT</code>. Nothing else: no client library, no broker protocol.</p>
+
+<div class="grid-2">
+  <section class="panel">
+    <h2>Custom</h2>
+    <form method="post" action="/publish" class="form">
+      <label>Queue
+        <input name="queue" value="{{ form.queue }}" list="queues" required pattern="{{ queue_pattern[1:-1] }}" maxlength="64">
+        <datalist id="queues">{% for q in queues %}<option value="{{ q }}">{% endfor %}</datalist>
+      </label>
+      <div class="row">
+        <label>How many
+          <input type="number" name="count" value="{{ form.count }}" min="1" max="100000" required>
+        </label>
+        <label>Priority
+          <input type="number" name="priority" value="{{ form.priority }}" min="-100" max="100">
+        </label>
+      </div>
+      <div class="row">
+        <label>Delay (seconds)
+          <input type="number" name="delay_s" value="{{ form.delay_s | int }}" min="0" max="3600" step="any">
+        </label>
+        <label>Max attempts
+          <input type="number" name="max_attempts" value="{{ form.max_attempts }}" min="1" max="20">
+        </label>
+        <label>Failure chance (%)
+          <input type="number" name="fail_percent" value="{{ form.fail_percent | int }}" min="0" max="100" step="any">
+        </label>
+      </div>
+      <label>Payload (JSON object)
+        <textarea name="payload" rows="4" spellcheck="false">{{ form.payload }}</textarea>
+      </label>
+      <p class="hint">
+        The failure chance is stored in the payload as <code>fail_probability</code>; the demo
+        handler raises an error that often. Each message also gets a <code>seq</code> number.
+      </p>
+      <button class="button primary">Publish</button>
+    </form>
+  </section>
+
+  <section class="panel">
+    <h2>Presets</h2>
+    <p class="muted">All go to the <code>default</code> queue, which the <code>worker</code> service consumes.</p>
+    <ul class="presets">
+      {% for name, description, values in presets %}
+      <li>
+        <form method="post" action="/publish">
+          {% for key, value in values.items() %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}
+          <button class="button">{{ name }}</button>
+          <span>{{ description }}</span>
+        </form>
+      </li>
+      {% endfor %}
+    </ul>
+    <h3>From any SQL client</h3>
+<pre><code>docker compose exec db psql -U broker -c \
+  "INSERT INTO messages (queue, payload) VALUES ('default', '{\"hello\": \"psql\"}')"</code></pre>
+  </section>
+</div>
+
+{{ sql_panel(snippets) }}
+{% endblock %}

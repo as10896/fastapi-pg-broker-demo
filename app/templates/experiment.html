@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% from "macros.html" import sql_panel %}
+{% block title %}Locking experiment{% endblock %}
+{% block content %}
+<h1>Why <code>FOR UPDATE SKIP LOCKED</code>?</h1>
+<p class="lead">
+  The same batch of jobs is processed by the same number of workers, three times, changing only the
+  locking clause of the query that picks the next job. Each job is processed inside the
+  transaction that selected it, so a row lock (if any) is held for the whole job.
+</p>
+
+<div class="modes">
+  {% for mode in modes %}
+  <section class="panel mode">
+    <h2>{{ mode.title }}</h2>
+    <p>{{ mode.summary }}</p>
+    <pre><code>{{ mode.claim_sql | trim }}</code></pre>
+  </section>
+  {% endfor %}
+</div>
+
+<section class="panel">
+  <h2>Run an experiment</h2>
+  <form method="post" action="/experiment" class="form">
+    <div class="row">
+      <label>Jobs
+        <input type="number" name="jobs" value="{{ form.jobs }}" min="1" max="500" required>
+      </label>
+      <label>Workers
+        <input type="number" name="workers" value="{{ form.workers }}" min="1" max="20" required>
+      </label>
+      <label>Work per job (ms)
+        <input type="number" name="job_ms" value="{{ form.job_ms }}" min="0" max="2000" required>
+      </label>
+    </div>
+    <fieldset class="checks">
+      <legend>Modes</legend>
+      {% for mode in modes %}
+      <label><input type="checkbox" name="modes" value="{{ mode.key }}" checked> {{ mode.title }}</label>
+      {% endfor %}
+    </fieldset>
+    <button class="button primary">Run</button>
+  </form>
+</section>
+
+<div hx-get="/partials/experiment{% if experiment_id %}?id={{ experiment_id }}{% endif %}" hx-trigger="every 1s">
+  {% include "partials/experiment.html" %}
+</div>
+
+{% if history %}
+<section class="panel">
+  <h2>History</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th class="num">#</th><th class="num">Jobs</th><th class="num">Workers</th><th class="num">Work</th><th>Runs</th><th>When</th></tr></thead>
+      <tbody>
+        {% for e in history %}
+        <tr>
+          <td class="num"><a href="/experiment?id={{ e.id }}">#{{ e.id }}</a></td>
+          <td class="num">{{ e.jobs }}</td>
+          <td class="num">{{ e.workers }}</td>
+          <td class="num">{{ e.job_ms }} ms</td>
+          <td><small>{{ e.runs or "" }}</small></td>
+          <td>{{ e.created_at | ago }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <form method="post" action="/experiment/clear"><button class="button small danger">Clear history</button></form>
+</section>
+{% endif %}
+
+{{ sql_panel(snippets) }}
+{% endblock %}

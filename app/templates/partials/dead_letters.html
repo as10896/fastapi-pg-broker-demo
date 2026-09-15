@@ -1,0 +1,33 @@
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th class="num">ID</th>
+        <th>Queue</th>
+        <th class="num">Attempts</th>
+        <th>Died</th>
+        <th>Last error</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for m in messages %}
+      <tr>
+        <td class="num"><a href="/messages/{{ m.id }}">#{{ m.id }}</a></td>
+        <td>{{ m.queue }}</td>
+        <td class="num">{{ m.attempts }} / {{ m.max_attempts }}</td>
+        <td>{{ m.finished_at | ago }}</td>
+        <td class="error" title="{{ m.last_error or '' }}">{{ m.last_error or "" }}</td>
+        <td class="row-actions">
+          <form method="post" action="/dead-letters/requeue">
+            <input type="hidden" name="message_id" value="{{ m.id }}">
+            <button class="button small">Requeue</button>
+          </form>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6" class="empty">The dead letter queue is empty. Try the <a href="/publish">Poison preset</a>.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>

@@ -1,0 +1,24 @@
+[project]
+name = "fastapi-pg-broker-demo"
+version = "0.1.0"
+description = "A message broker built on a single PostgreSQL table (FOR UPDATE SKIP LOCKED + LISTEN/NOTIFY), demoed with FastAPI and Jinja2."
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "fastapi[standard-no-fastapi-cloud-cli]>=0.141.1",
+    "psycopg[binary,pool]>=3.3.5",
+]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.16.7",
+]
+
+[tool.fastapi]
+entrypoint = "app.main:app"
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "ASYNC", "FAST"]

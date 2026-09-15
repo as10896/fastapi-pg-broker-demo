@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}{% endblock %} · Postgres Message Broker</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/htmx.min.js" defer></script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="/"><span class="brand-mark">PG</span> Message Broker</a>
+  <nav>
+    {%- set path = request.url.path %}
+    {%- for href, label in [
+          ("/", "Dashboard"),
+          ("/publish", "Publish"),
+          ("/workers", "Workers"),
+          ("/messages", "Messages"),
+          ("/dead-letters", "Dead letters"),
+          ("/experiment", "Locking experiment"),
+        ] %}
+    <a href="{{ href }}"{% if path == href or (href != "/" and path.startswith(href)) %} aria-current="page"{% endif %}>{{ label }}</a>
+    {%- endfor %}
+  </nav>
+</header>
+<main>
+  {%- set notice = request.query_params.get("notice") %}
+  {%- if notice %}
+  <div class="notice" role="status">{{ notice }}</div>
+  {%- endif %}
+  {% block content %}{% endblock %}
+</main>
+<footer>Every number on these pages comes straight from PostgreSQL. No Redis, no RabbitMQ.</footer>
+</body>
+</html>

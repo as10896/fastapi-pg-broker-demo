@@ -1,0 +1,72 @@
+{% from "macros.html" import badge %}
+<div class="stack">
+  {% for w in workers %}
+  <section class="panel{% if w.lost %} lost{% endif %}">
+    <header class="worker-head">
+      <div>
+        <h2><code>{{ w.id }}</code></h2>
+        <span class="muted">
+          host {{ w.hostname }} · pid {{ w.pid }} · started {{ w.started_at | ago }} ·
+          heartbeat {{ w.heartbeat_age_s | duration }} ago
+        </span>
+      </div>
+      <div class="worker-actions">
+        {% if w.lost %}
+        {{ badge("dead", "lost") }}
+        {% else %}
+        {{ badge("idle", "live") }}
+        {% if w.consumers %}
+        <form method="post" action="/workers/{{ w.id }}/stop"><button class="button small">Stop all consumers</button></form>
+        {% endif %}
+        {% endif %}
+      </div>
+    </header>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Consumer</th>
+            <th>Queue</th>
+            <th>State</th>
+            <th>Message</th>
+            <th class="num">Processed</th>
+            <th class="num">Failed</th>
+            <th class="num">Work</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for c in w.consumers %}
+          {% set lost = c.heartbeat_age_s >= lost_after_s %}
+          <tr{% if lost %} class="lost"{% endif %}>
+            <td><code>{{ c.id | replace(w.id ~ "-", "") }}</code></td>
+            <td>{{ c.queue }}</td>
+            <td>{% if lost %}{{ badge("dead", "lost") }}{% else %}{{ badge(c.state) }}{% endif %}</td>
+            <td>{% if c.current_message_id %}<a href="/messages/{{ c.current_message_id }}">#{{ c.current_message_id }}</a>{% else %}—{% endif %}</td>
+            <td class="num">{{ c.processed }}</td>
+            <td class="num">{{ c.failed }}</td>
+            <td class="num">{{ c.work_ms }} ms</td>
+            <td class="row-actions">
+              {% if not lost and not w.lost %}
+              <form method="post" action="/workers/{{ w.id }}/consumers/{{ c.id }}/stop"><button class="button small">Stop</button></form>
+              <form method="post" action="/workers/{{ w.id }}/consumers/{{ c.id }}/kill"><button class="button small danger">Kill</button></form>
+              {% endif %}
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="8" class="empty">No consumers. Start some above.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  {% else %}
+  <section class="panel">
+    <p class="muted">No workers registered. Start one with <code>docker compose up -d worker</code>.</p>
+  </section>
+  {% endfor %}
+</div>
+<p class="hint">
+  Workers and consumers are shown as <em>lost</em> when they have not sent a heartbeat for
+  {{ lost_after_s | round(1) }} s. Their rows are removed after a minute.
+</p>

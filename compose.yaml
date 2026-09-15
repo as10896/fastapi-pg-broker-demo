@@ -1,0 +1,56 @@
+# Only `app` publishes a port. `db` and `worker` are reachable only on the
+# compose network: like a Celery deployment, workers just talk to the broker.
+
+x-python-service: &python-service
+  build: .
+  image: fastapi-pg-broker-demo
+  environment:
+    DATABASE_URL: postgresql://broker:broker@db:5432/broker
+  depends_on:
+    db:
+      condition: service_healthy
+  develop:
+    # `docker compose watch`: sync code changes into the container and restart it.
+    watch:
+      - action: sync+restart
+        path: ./app
+        target: /app/app
+        ignore:
+          - __pycache__/
+      - action: sync+restart
+        path: ./sql
+        target: /app/sql
+      - action: rebuild
+        path: ./uv.lock
+
+services:
+  db:
+    image: postgres:18
+    environment:
+      POSTGRES_USER: broker
+      POSTGRES_PASSWORD: broker
+      POSTGRES_DB: broker
+    volumes:
+      # Postgres 18+ images keep data under /var/lib/postgresql/<major>/docker.
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U broker -d broker"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  # Web UI and producer.
+  app:
+    <<: *python-service
+    command: ["fastapi", "run", "--port", "8000"]
+    ports:
+      - "${APP_PORT:-8000}:8000"
+
+  # Consumers. Scale with: docker compose up -d --scale worker=3
+  worker:
+    <<: *python-service
+    command:
+      ["python", "-m", "app.worker", "--queue", "default", "--concurrency", "2", "--work-ms", "300"]
+
+volumes:
+  pgdata:

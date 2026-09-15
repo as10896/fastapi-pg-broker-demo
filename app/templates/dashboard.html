@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% from "macros.html" import sql_panel %}
+{% block title %}Dashboard{% endblock %}
+{% block content %}
+<section class="intro">
+  <h1>A message broker in one Postgres table</h1>
+  <p>
+    Producers <code>INSERT</code> rows. Consumers claim them with
+    <code>SELECT … FOR UPDATE SKIP LOCKED</code>, so many consumers can pull from the same
+    queue without ever receiving the same message. <code>LISTEN/NOTIFY</code> wakes idle
+    consumers, leases recover messages from crashed consumers, and failed messages are retried
+    with backoff until they land in the dead letter queue.
+  </p>
+</section>
+
+<div hx-get="/partials/stats" hx-trigger="every 1s">
+  {% include "partials/stats.html" %}
+</div>
+
+<div class="grid-2">
+  <section class="panel">
+    <h2>Message lifecycle</h2>
+<pre class="diagram">
+             claim                    ack
+ <b class="s-pending">pending</b> ──────────────▶ <b class="s-processing">processing</b> ────────▶ <b class="s-done">done</b>
+    ▲                        │
+    │                        │ nack or lease expired
+    ├────────────────────────┤ retry (attempts &lt; max)
+    │                        │
+    │ requeue                ▼ attempts ≥ max
+    └───────────────────── <b class="s-dead">dead</b>
+</pre>
+    <p class="hint">Claim uses <code>FOR UPDATE SKIP LOCKED</code>. Retries wait 2, 4, 8… seconds (at most 60).</p>
+  </section>
+
+  <section class="panel">
+    <h2>Things to try</h2>
+    <ol class="steps">
+      <li><a href="/publish">Publish</a> a burst of 200 messages and watch the worker drain it.</li>
+      <li>On <a href="/workers">Workers</a>, start more consumers, or run <code>docker compose up -d --scale worker=3</code>: throughput goes up, and no message is processed twice.</li>
+      <li>Start a consumer with 5000 ms of work and <em>kill</em> it while it is busy, or run <code>docker compose kill worker</code>. Its message stays <em>processing</em> until the lease expires, then it is handed out again.</li>
+      <li>Publish the <em>Flaky</em> and <em>Poison</em> presets, then open <a href="/dead-letters">Dead letters</a>.</li>
+      <li>Run the <a href="/experiment">locking experiment</a> to see why <code>SKIP LOCKED</code> matters.</li>
+    </ol>
+    <form method="post" action="/reset" onsubmit="return confirm('Delete every message in every queue?')">
+      <button class="button danger">Reset all messages</button>
+    </form>
+  </section>
+</div>
+
+{{ sql_panel(snippets) }}
+{% endblock %}

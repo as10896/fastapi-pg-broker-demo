@@ -1,0 +1,27 @@
+{% from "macros.html" import message_status %}
+<div class="grid-2">
+  <section class="panel">
+    <dl class="fields">
+      <dt>Status</dt><dd>{{ message_status(message) }}</dd>
+      <dt>Queue</dt><dd>{{ message.queue }}</dd>
+      <dt>Priority</dt><dd>{{ message.priority }}</dd>
+      <dt>Attempts</dt><dd>{{ message.attempts }} of {{ message.max_attempts }}</dd>
+      <dt>Created</dt><dd>{{ message.created_at | ago }} <small class="muted">{{ message.created_at.isoformat(timespec="seconds") }}</small></dd>
+      <dt>Available</dt><dd>{{ message.available_at | ago }}</dd>
+      <dt>{% if message.status == "processing" %}Held by{% else %}Handled by{% endif %}</dt>
+      <dd>{% if message.locked_by %}<code>{{ message.locked_by }}</code>{% else %}—{% endif %}</dd>
+      <dt>Lease renewed</dt><dd>{{ message.locked_at | ago }}</dd>
+      <dt>Finished</dt><dd>{{ message.finished_at | ago }}</dd>
+      <dt>Last error</dt><dd class="error-full">{{ message.last_error or "—" }}</dd>
+    </dl>
+    {% if message.status == "dead" %}
+    <form method="post" action="/messages/{{ message.id }}/requeue">
+      <button class="button primary">Requeue</button>
+    </form>
+    {% endif %}
+  </section>
+  <section class="panel">
+    <h2>Payload</h2>
+    <pre><code>{{ message.payload | pretty_json }}</code></pre>
+  </section>
+</div>

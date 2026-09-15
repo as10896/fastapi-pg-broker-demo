@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% from "macros.html" import sql_panel %}
+{% block title %}Dead letters{% endblock %}
+{% block content %}
+<h1>Dead letter queue</h1>
+<p class="lead">
+  Messages that failed <code>max_attempts</code> times, or whose consumers kept crashing. They stay
+  here for inspection until you requeue or purge them.
+</p>
+
+<div class="actions">
+  <form method="post" action="/dead-letters/requeue"><button class="button primary">Requeue all</button></form>
+  <form method="post" action="/dead-letters/purge" onsubmit="return confirm('Delete all dead messages?')"><button class="button danger">Purge all</button></form>
+</div>
+
+<div hx-get="/partials/dead-letters" hx-trigger="every 2s">
+  {% include "partials/dead_letters.html" %}
+</div>
+
+{{ sql_panel(snippets) }}
+{% endblock %}

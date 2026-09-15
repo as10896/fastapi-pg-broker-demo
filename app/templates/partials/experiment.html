@@ -1,0 +1,62 @@
+{% from "macros.html" import badge %}
+<section class="panel">
+  {% if not runs %}
+  <h2>Results</h2>
+  <p class="muted">No experiment yet. Run one above; it takes a few seconds.</p>
+  {% else %}
+  <h2>
+    Experiment #{{ experiment_id }}
+    {% if running %}<span class="badge badge-processing">running</span>{% endif %}
+  </h2>
+  <p class="muted">
+    {{ setup.jobs }} jobs × {{ setup.job_ms }} ms with {{ setup.workers }} workers.
+    One worker alone would need ≈ {{ "%.1f" | format(serial_s) }} s;
+    perfectly parallel workers ≈ {{ "%.1f" | format(parallel_s) }} s.
+  </p>
+  <div class="table-wrap">
+    <table class="results">
+      <thead>
+        <tr>
+          <th>Mode</th>
+          <th>Status</th>
+          <th class="num">Elapsed</th>
+          <th class="num">Jobs done</th>
+          <th class="num">Executions</th>
+          <th class="num">Duplicates</th>
+          <th>Throughput</th>
+          <th>Executions per worker</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in runs %}
+        <tr>
+          <td><strong>{{ r.mode_title }}</strong></td>
+          <td>{{ badge(r.status) }}{% if r.error %}<br><small class="error-full">{{ r.error }}</small>{% endif %}</td>
+          <td class="num">{% if r.elapsed_s is not none %}{{ "%.2f" | format(r.elapsed_s) }} s{% else %}—{% endif %}</td>
+          <td class="num">{{ r.unique_jobs }} / {{ r.jobs }}</td>
+          <td class="num">{{ r.executions }}</td>
+          <td class="num">{% if r.duplicates %}<strong class="s-dead">{{ r.duplicates }}</strong>{% else %}<span class="s-done">0</span>{% endif %}</td>
+          <td class="bar-cell">
+            {% set pct = (100 * r.throughput / max_throughput) if max_throughput else 0 %}
+            <div class="bar"><span style="width: {{ pct | round(1) }}%"></span></div>
+            <small>{{ "%.1f" | format(r.throughput) }} jobs/s</small>
+          </td>
+          <td>
+            <div class="mini-bars">
+              {% set most = r.per_worker | map(attribute="executions") | max if r.per_worker else 0 %}
+              {% for w in r.per_worker %}
+              <span title="worker {{ w.worker }}: {{ w.executions }}" style="height: {{ (100 * w.executions / most) | round(0) if most else 0 }}%"></span>
+              {% endfor %}
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="hint">
+    <strong>Duplicates</strong> = executions − distinct jobs: work that was done more than once.
+    <strong>Throughput</strong> counts distinct jobs per second.
+  </p>
+  {% endif %}
+</section>

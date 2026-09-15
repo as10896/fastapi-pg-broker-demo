@@ -1,10 +1,27 @@
 # fastapi-pg-broker-demo
 
-A message broker built on **one PostgreSQL table**: no RabbitMQ, no Redis.
-A FastAPI + Jinja2 (+ htmx) web app publishes messages and shows everything that happens;
-worker containers consume them, like Celery workers. You can scale and crash workers,
-watch retries and dead letters, and compare locking strategies side by side.
-Every page shows the exact SQL it runs.
+A message broker is the usual answer to long-running work. Instead of making a request wait
+for a slow job, such as sending emails, generating a report or calling a third-party API, the
+web app puts a message on a queue and returns right away. Background workers then pick the
+job up, retry it when it fails, and scale independently of the web app.
+
+The usual way to get one is to run a dedicated broker such as RabbitMQ or Kafka. That is one
+more cluster to deploy, secure, monitor, back up and keep available, and in many systems it is
+more machinery than the problem calls for.
+
+In system design, a smaller tech stack is usually a better one. When the requirements are
+modest and something you already run can provide a simple version of the feature, use it
+rather than adding another component.
+
+This repo shows how to build a message broker directly on **PostgreSQL**, so you don't need to
+stand up a RabbitMQ cluster. It is most useful when your stack already keeps its business data
+in a relational database: the queue lives in the same database, is backed up and monitored the
+same way, and a job can even be enqueued in the same transaction as the data it belongs to.
+
+The demo is a FastAPI + Jinja2 (+ htmx) web app that publishes messages and shows everything
+that happens, plus worker containers that consume them, like Celery workers. You can scale and
+crash workers, watch retries and dead letters, and compare locking strategies side by side.
+Every page shows the exact SQL it runs, and every broker feature maps to plain SQL:
 
 | Broker feature                       | How Postgres does it                                                |
 | ------------------------------------ | ------------------------------------------------------------------- |

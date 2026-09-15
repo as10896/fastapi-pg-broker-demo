@@ -1,4 +1,17 @@
-FROM python:3.13-slim
+# Multi-stage build for a uv-managed FastAPI app.
+#
+#   builder: has uv, installs the dependencies into /app/.venv
+#   runtime: gets only the virtual environment and the code; uv is not in the final image
+#
+# Both stages must use the same base image: the scripts and the `python` symlink in
+# .venv point to the base image's interpreter (/usr/local/bin/python3.x).
+ARG PYTHON_IMAGE=python:3.13-slim
+
+
+# ------------------------------------------------------------------------------
+# builder
+# ------------------------------------------------------------------------------
+FROM ${PYTHON_IMAGE} AS builder
 
 COPY --from=ghcr.io/astral-sh/uv:0.8.19 /uv /uvx /bin/
 
@@ -8,14 +21,9 @@ COPY --from=ghcr.io/astral-sh/uv:0.8.19 /uv /uvx /bin/
 # UV_PYTHON_DOWNLOADS: use the image's Python, never download another one.
 ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
-    UV_PYTHON_DOWNLOADS=never \
-    PYTHONUNBUFFERED=1
+    UV_PYTHON_DOWNLOADS=never
 
 WORKDIR /app
-
-# An unprivileged system user (no home directory, no login shell) to run the app.
-# Build steps below still run as root; only the running container uses this user.
-RUN groupadd --system app && useradd --system --gid app --no-create-home app
 
 # Step 1: install dependencies only.
 #
@@ -33,19 +41,36 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
     uv sync --locked --no-install-project --no-dev
 
-# Step 2: add the code (.dockerignore keeps the host's .venv out).
-# --chown: `docker compose watch` syncs changed files into /app as the container
-# user, so that user must be able to write there. The .venv stays owned by root
-# and read-only for the app.
-COPY --chown=app:app . .
-
-# Step 3: install the project itself. This app has no [build-system], so uv does
-# not install it and this is a no-op today; it keeps the image correct if the
-# project ever becomes an installable package.
+# Step 2: install the project itself. This app has no [build-system], so uv does
+# not install it and this is a no-op here. For a packaged project it installs the
+# package into the venv; --no-editable copies it in instead of linking to /app,
+# so the venv works on its own in the runtime stage.
+COPY . .
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --locked --no-dev
+    uv sync --locked --no-dev --no-editable
 
-ENV PATH="/app/.venv/bin:$PATH"
+
+# ------------------------------------------------------------------------------
+# runtime
+# ------------------------------------------------------------------------------
+FROM ${PYTHON_IMAGE} AS runtime
+
+ENV PYTHONUNBUFFERED=1 \
+    PATH="/app/.venv/bin:$PATH"
+
+# An unprivileged system user (no home directory, no login shell) to run the app.
+RUN groupadd --system app && useradd --system --gid app --no-create-home app
+
+WORKDIR /app
+
+# The virtual environment from the builder, owned by root: read-only for the app.
+COPY --from=builder /app/.venv /app/.venv
+
+# The code, straight from the build context (.dockerignore keeps the host's .venv
+# out, so it cannot overwrite the one above).
+# --chown: `docker compose watch` syncs changed files into /app as the container
+# user, so that user must be able to write there.
+COPY --chown=app:app . .
 
 USER app
 
